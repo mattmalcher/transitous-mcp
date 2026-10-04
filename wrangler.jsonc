@@ -1,0 +1,12 @@
+{
+  "name": "transitous-mcp",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "vars": {
+    "TRANSITOUS_USER_AGENT": "transitous-mcp/0.1.0 (+https://github.com/mattmalcher)"
+  },
+  "durable_objects": { "bindings": [{ "name": "TRANSITOUS", "class_name": "TransitousGateway" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TransitousGateway"] }],
+  "observability": { "enabled": false }
+}
