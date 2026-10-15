@@ -6,8 +6,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 const endpoint = process.env.TRANSITOUS_MCP_URL;
 const token = process.env.TRANSITOUS_MCP_TOKEN;
-if (!endpoint) {
-  console.error('Set TRANSITOUS_MCP_URL to connect the desktop bridge. TRANSITOUS_MCP_TOKEN is optional.');
+if (!endpoint || !token?.trim()) {
+  console.error('Set TRANSITOUS_MCP_URL and TRANSITOUS_MCP_TOKEN to connect the desktop bridge.');
   process.exit(1);
 }
 const url = new URL(endpoint);
@@ -17,7 +17,7 @@ if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '12
 }
 const remote = new Client({name: 'transitous-desktop-bridge', version: '0.1.0'});
 try {
-  await remote.connect(new StreamableHTTPClientTransport(url, {requestInit: {headers: token ? {Authorization: `Bearer ${token}`} : {}}}));
+  await remote.connect(new StreamableHTTPClientTransport(url, {requestInit: {headers: {Authorization: `Bearer ${token}`}}}));
   const server = new Server({name: 'transitous-mcp', version: '0.1.0'}, {capabilities: {tools: {}, resources: {}}, instructions: remote.getInstructions()});
   server.setRequestHandler(ListToolsRequestSchema, request => remote.listTools(request.params));
   server.setRequestHandler(CallToolRequestSchema, request => remote.callTool(request.params));

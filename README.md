@@ -40,11 +40,11 @@ npm run check
 a desktop stdio bridge round trip) and a Wrangler dry-run bundle. Tests never
 call Transitous. The bridge test binds an ephemeral loopback port.
 
-For local work, run `npm run dev`. Authentication is off by default. To enable
-it, create an ignored `.dev.vars` containing a random development `MCP_TOKEN`. The endpoint is printed by Wrangler.
+For local work, create an ignored `.dev.vars` containing a random development
+`MCP_TOKEN`, then run `npm run dev`. The endpoint is printed by Wrangler.
 Never commit `.dev.vars`, client credentials, real journey outputs or caches.
 
-With `TRANSITOUS_MCP_URL` set (and the token if required), `npm run smoke`
+With `TRANSITOUS_MCP_URL` and `TRANSITOUS_MCP_TOKEN` set, `npm run smoke`
 checks MCP initialization, discovery, guide access and validation without any
 upstream call. `npm run smoke -- --live-lookup` additionally makes one station
 lookup and checks its cached repeat. The actual local workerd runtime passed
@@ -54,21 +54,36 @@ operations without imposing routing load on Transitous.
 
 ## Deploy
 
-The Worker requires a contact-bearing `TRANSITOUS_USER_AGENT` and its Durable
-Object binding. It accepts anonymous MCP connections by default.
+The Worker requires at least one door secret, a contact-bearing
+`TRANSITOUS_USER_AGENT` and its Durable Object binding. All MCP connections
+require authentication, and each door is closed unless its secret is set.
+
+| Door | Secret | Used by | Access |
+|---|---|---|---|
+| Direct | `MCP_TOKEN` | Claude Code, Codex, desktop bridge | The token is the identity. |
+| Site | `SITE_TOKEN` and `ALLOWED_USER_IDS` | A ChatGPT Site bridge that relays the Sites-verified user in `Travel-Site-User` | Discovery needs the token only. Any other call needs the user to be in the comma-separated allowlist. |
 
 1. Review `wrangler.jsonc`: Worker name and your public contact URL in
    `TRANSITOUS_USER_AGENT`. A source repository URL is preferable once published.
 2. Authenticate Wrangler with `npx wrangler login` if required.
-3. Optional: run `npx wrangler secret put MCP_TOKEN` to restrict access with a token.
+3. Set secrets **before** deploying code that enforces them:
+   `npx wrangler secret put MCP_TOKEN`, and for a Site
+   `npx wrangler secret put SITE_TOKEN` and `npx wrangler secret put ALLOWED_USER_IDS`.
+   Use different random values for the two tokens.
 4. Run `npm run deploy`. Use the printed `https://…workers.dev/mcp` endpoint.
 
-If `MCP_TOKEN` is set, clients must send `Authorization: Bearer …`; missing or
-incorrect tokens get 401. If it is unset, no authentication is required. Rotate
-it with the secret command or remove it with `npx wrangler secret delete MCP_TOKEN`
-to return to anonymous access. There are no accounts or OAuth login yet.
-The endpoint is designed for direct MCP clients and a desktop bridge; native
-Claude web/mobile connector installation remains unverified.
+Missing or incorrect tokens get 401. With neither `MCP_TOKEN` nor `SITE_TOKEN`
+set (or blank), or with both set to the same value, `/mcp` returns 503 without
+handling MCP requests or contacting upstream. Equal values are refused because
+the direct door would otherwise bypass the Site allowlist. A Site token with an
+empty or missing allowlist still answers discovery but refuses every other call
+(403). The public `/` metadata endpoint remains available. Rotate a token with
+the secret command; deleting it closes that door. To find a ChatGPT user ID for
+`ALLOWED_USER_IDS`, call from the Site once and read the refusal in
+`npx wrangler tail` (an ID is not a secret). There are no accounts or OAuth
+login on the Worker; a Site provides the ChatGPT-facing login.
+The endpoint is designed for direct MCP clients, a desktop bridge and a Site
+bridge; native Claude web/mobile connector installation remains unverified.
 No CORS/browser origins are enabled. No legacy SSE endpoint is provided.
 
 ## Connect a desktop client (including Claude Desktop)
@@ -83,14 +98,15 @@ absolute paths on that machine. For example:
       "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/transitous_mcp/src/stdio.js"],
       "env": {
-        "TRANSITOUS_MCP_URL": "https://YOUR-WORKER.workers.dev/mcp"
+        "TRANSITOUS_MCP_URL": "https://YOUR-WORKER.workers.dev/mcp",
+        "TRANSITOUS_MCP_TOKEN": "YOUR-SECRET-TOKEN"
       }
     }
   }
 }
 ```
 
-If you enable authentication, add `TRANSITOUS_MCP_TOKEN` to the client environment
+Set `TRANSITOUS_MCP_TOKEN` to the Worker secret in the client environment
 and keep that configuration private. The bridge forwards tools and resources
 to the Worker; it never routes against Transitous independently. HTTPS is
 required except for loopback development. stdout contains MCP messages only.
@@ -99,14 +115,13 @@ remains a manual smoke check after deployment.
 
 ## Connect Claude Code / other HTTP clients
 
-Connect Claude Code without a token:
+Connect Claude Code with the Worker token:
 
 ```sh
-claude mcp add --transport http transitous https://YOUR-WORKER.workers.dev/mcp
+claude mcp add --transport http transitous https://YOUR-WORKER.workers.dev/mcp --header 'Authorization: Bearer YOUR-SECRET-TOKEN'
 ```
 
-If authentication is enabled, add `--header 'Authorization: Bearer YOUR-SECRET-TOKEN'`
-and keep the token in private client configuration. Other Streamable HTTP clients
+Keep the token in private client configuration. Other Streamable HTTP clients
 can use the same URL.
 See [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp).
 
@@ -139,7 +154,7 @@ source attribution and modest load. Light prototype testing is allowed before
 publication. This source carries the MIT licence; publish it before
 regular use, and follow its requirement to contact the operators before routing
 or substantial load. Tool schemas bound query sizes and do not expose arbitrary upstream URLs or bulk
-operations. Anonymous clients can still automate allowed calls, exhaust the
+operations. Authenticated clients can still automate allowed calls, exhaust the
 shared budget or generate Worker traffic; these controls cap upstream load, not
 Cloudflare costs or denial of service. There is no automatic retry loop here.
 See [Transitous API policy](https://transitous.org/api/).

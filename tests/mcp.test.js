@@ -47,16 +47,19 @@ test('SDK client initializes, discovers tools, reads guide and runs research ove
   } finally { await client.close(); }
 });
 
-test('anonymous clients can discover and call the same bounded tools without a token', async () => {
-  const {MCP_TOKEN, ...anonymous} = env;
-  const client = new Client({name: 'fictional-anonymous-client', version: '1.0'});
-  try {
-    await client.connect(new StreamableHTTPClientTransport(new URL('https://example.com/mcp'), {
-      fetch: (url, init) => worker.fetch(new Request(url, init), anonymous),
-    }));
-    assert.equal((await client.listTools()).tools.length, 3);
-    const result = await client.callTool({name: 'find_stations', arguments: {text: 'Fictional Station'}});
-    assert.equal(result.isError, undefined);
-    assert.equal(result.structuredContent.matches[0].id, 'fictional:station');
-  } finally { await client.close(); }
+test('missing or blank server tokens reject every MCP method before upstream access', async () => {
+  const count = calls.length;
+  for (const token of [undefined, '', '   ']) {
+    for (const method of ['POST', 'GET', 'DELETE', 'OPTIONS']) {
+      for (const authorization of [undefined, 'Bearer fictional-test-token']) {
+        const response = await worker.fetch(new Request('https://example.com/mcp', {
+          method, headers: authorization ? {Authorization: authorization} : {},
+          ...(method === 'POST' ? {body: '{}'} : {}),
+        }), {...env, MCP_TOKEN: token});
+        assert.equal(response.status, 503);
+        assert.equal(await response.text(), 'Server is not configured');
+      }
+    }
+  }
+  assert.equal(calls.length, count);
 });
