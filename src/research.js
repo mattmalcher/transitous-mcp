@@ -24,6 +24,9 @@ const pick = (value, keys) => Object.fromEntries(keys.filter(k => value?.[k] !==
 const stop = value => pick(value, ['name', 'stopId', 'lat', 'lon', 'tz', 'arrival', 'departure', 'scheduledArrival', 'scheduledDeparture', 'scheduledTrack', 'track', 'cancelled', 'alerts']);
 const station = value => pick(value, ['id', 'name', 'type', 'lat', 'lon', 'tz']);
 const leg = value => ({...pick(value, ['mode', 'startTime', 'endTime', 'scheduledStartTime', 'scheduledEndTime', 'duration', 'displayName', 'routeShortName', 'routeLongName', 'tripShortName', 'agencyName', 'agencyUrl', 'routeUrl', 'headsign', 'realTime', 'cancelled', 'alerts']), from: stop(value.from), to: stop(value.to)});
+// Keeps only the fields the tools return. Run in the Durable Object so the large upstream body
+// (polylines, intermediate stops) is parsed once and never cached or sent to the Worker.
+export const compactPlan = data => ({itineraries: (data.itineraries || []).map(i => ({...pick(i, ['startTime', 'endTime', 'duration', 'transfers']), legs: (i.legs || []).map(leg)}))});
 export class Research {
   constructor(get) { this.get = get; }
   async stations(text, limit = 8) {
