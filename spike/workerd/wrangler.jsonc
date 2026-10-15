@@ -1,0 +1,2 @@
+// Local spike only. Never deploy this config.
+{ "name": "spike-local-only", "main": "check.js", "compatibility_date": "2026-09-01", "workers_dev": false }

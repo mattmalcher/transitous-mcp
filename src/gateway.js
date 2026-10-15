@@ -1,3 +1,4 @@
+import { compactPlan } from './research.js';
 const API = 'https://api.transitous.org/api/';
 const endpoints = {geocode: 'v1/geocode', plan: 'v6/plan', stoptimes: 'v6/stoptimes'};
 const allowed = new Set(['geocode', 'plan', 'stoptimes']);
@@ -63,7 +64,8 @@ export class TransitousGateway {
     if (!response.ok) return Response.json({error: `Transitous returned HTTP ${response.status}; try again later`}, {status: response.status === 429 ? 429 : 502});
     const body = await response.text();
     if (body.length > 1000000) return Response.json({error: 'Transitous response too large; narrow your query'}, {status: 502});
-    const reply = {data: JSON.parse(body), retrieved_at: new Date(this.now()).toISOString(), cached: false};
+    const parsed = JSON.parse(body);
+    const reply = {data: path === 'plan' ? compactPlan(parsed) : parsed, retrieved_at: new Date(this.now()).toISOString(), cached: false};
     const keys = (await this.storage.get('keys') || []).filter(k => k !== key);
     keys.push(key);
     if (keys.length > 64) await this.storage.delete(keys.shift());
