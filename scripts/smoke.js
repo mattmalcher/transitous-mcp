@@ -3,10 +3,10 @@ import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 const endpoint = process.env.TRANSITOUS_MCP_URL;
 const token = process.env.TRANSITOUS_MCP_TOKEN;
-if (!endpoint) throw new Error('Set TRANSITOUS_MCP_URL (and TRANSITOUS_MCP_TOKEN if authentication is enabled)');
+if (!endpoint || !token?.trim()) throw new Error('Set TRANSITOUS_MCP_URL and TRANSITOUS_MCP_TOKEN');
 const client = new Client({name: 'transitous-smoke-check', version: '0.1.0'});
 try {
-  await client.connect(new StreamableHTTPClientTransport(new URL(endpoint), {requestInit: {headers: token ? {Authorization: `Bearer ${token}`} : {}}}));
+  await client.connect(new StreamableHTTPClientTransport(new URL(endpoint), {requestInit: {headers: {Authorization: `Bearer ${token}`}}}));
   assert.equal((await client.listTools()).tools.length, 3);
   assert.match((await client.readResource({uri: 'transitous://guide'})).contents[0].text, /operator/);
   const invalid = await client.callTool({name: 'plan_journey', arguments: {from: '1,2', to: '3,4', time: 'invalid'}});
