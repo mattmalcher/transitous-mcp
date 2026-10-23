@@ -86,3 +86,22 @@ test('daily budget persists, excludes cache hits and resets at midnight UTC', as
   assert.equal((await request('geocode', {text: 'Different fictional station'})).status, 200);
   assert.equal(values.get('daily').count, 1);
 });
+
+test('trims plan bodies before caching, so a large plan passes the size limit', async () => {
+  const geometry = 'x'.repeat(1200000);
+  const plan = {itineraries: [{duration: 60, transfers: 0, legs: [{mode: 'RAIL', legGeometry: {points: geometry}, intermediateStops: [{name: 'Fictional halt'}], from: {name: 'Fictional A'}, to: {name: 'Fictional B'}}]}]};
+  const {request, values} = setup(() => Response.json(plan));
+  const result = await request('plan', {fromPlace: '1,2', toPlace: '3,4'});
+  assert.equal(result.status, 200);
+  const {data} = await result.json();
+  assert.equal(data.itineraries[0].legs[0].from.name, 'Fictional A');
+  assert.equal(data.itineraries[0].legs[0].legGeometry, undefined);
+  const cached = [...values.entries()].find(([k]) => k.startsWith('cache:'))[1];
+  assert.ok(JSON.stringify(cached).length < 10000);
+});
+
+test('still rejects oversized non-plan bodies', async () => {
+  const {request, calls} = setup(() => Response.json([{name: 'x'.repeat(1100000)}]));
+  assert.equal((await request()).status, 502);
+  assert.equal(calls.length, 1);
+});

@@ -63,9 +63,12 @@ export class TransitousGateway {
     const response = await this.fetchUpstream(url, {headers: {'User-Agent': this.env.TRANSITOUS_USER_AGENT, Accept: 'application/json'}, signal: AbortSignal.timeout(20000)});
     if (!response.ok) return Response.json({error: `Transitous returned HTTP ${response.status}; try again later`}, {status: response.status === 429 ? 429 : 502});
     const body = await response.text();
-    if (body.length > 1000000) return Response.json({error: 'Transitous response too large; narrow your query'}, {status: 502});
+    // Plan bodies are mostly polylines that compactPlan drops, so they get a larger raw allowance;
+    // what is cached and sent to the Worker is capped at 1 MB either way.
+    if (body.length > (path === 'plan' ? 5000000 : 1000000)) return Response.json({error: 'Transitous response too large; narrow your query'}, {status: 502});
     const parsed = JSON.parse(body);
     const reply = {data: path === 'plan' ? compactPlan(parsed) : parsed, retrieved_at: new Date(this.now()).toISOString(), cached: false};
+    if (path === 'plan' && JSON.stringify(reply).length > 1000000) return Response.json({error: 'Transitous response too large; narrow your query'}, {status: 502});
     const keys = (await this.storage.get('keys') || []).filter(k => k !== key);
     keys.push(key);
     if (keys.length > 64) await this.storage.delete(keys.shift());
