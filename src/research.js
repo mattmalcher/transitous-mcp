@@ -27,6 +27,10 @@ const leg = value => ({...pick(value, ['mode', 'startTime', 'endTime', 'schedule
 // Keeps only the fields the tools return. Run in the Durable Object so the large upstream body
 // (polylines, intermediate stops) is parsed once and never cached or sent to the Worker.
 export const compactPlan = data => ({itineraries: (data.itineraries || []).map(i => ({...pick(i, ['startTime', 'endTime', 'duration', 'transfers']), legs: (i.legs || []).map(leg)}))});
+// Route view of a compacted plan: a few itineraries, one line of fields per leg. Also run in the
+// Durable Object, so a multi-leg route sends the Worker a few KB per leg rather than tens.
+const routeLeg = l => pick({mode: l.mode, from: l.from?.name, to: l.to?.name, departure: l.from?.departure ?? l.startTime, arrival: l.to?.arrival ?? l.endTime, line: l.displayName || l.routeShortName || l.tripShortName, agency: l.agencyName, headsign: l.headsign, track: l.from?.track ?? l.from?.scheduledTrack, cancelled: l.cancelled || undefined, realTime: l.realTime || undefined}, ['mode', 'from', 'to', 'departure', 'arrival', 'line', 'agency', 'headsign', 'track', 'cancelled', 'realTime']);
+export const routePlan = (data, limit) => ({itineraries: (data.itineraries || []).slice(0, limit).map(i => ({...pick(i, ['startTime', 'endTime', 'duration', 'transfers']), legs: (i.legs || []).map(routeLeg)}))});
 export class Research {
   constructor(get) { this.get = get; }
   async stations(text, limit = 8) {
@@ -55,6 +59,24 @@ export class Research {
     if (!Array.isArray(reply.data.itineraries)) throw new Error('Unexpected Transitous journey response');
     const itineraries = reply.data.itineraries.filter(i => !(direct || max_transfers === 0) || i.transfers === 0).slice(0, limit).map(i => ({...pick(i, ['startTime', 'endTime', 'duration', 'transfers']), legs: (i.legs || []).map(leg)}));
     return {origin, destination, query: {time: utc, arrive_by, direct: direct || max_transfers === 0}, itineraries, sources: [this.source(reply)], warnings: [...caveats, ...(!itineraries.length ? ['No matching itineraries; this can indicate a feed gap, not an impossible journey.'] : [])]};
+  }
+  // Plans consecutive legs between up to 6 stops. Each stop is resolved once; sources and caveats appear once.
+  async route({stops, time, limit = 3}) {
+    const utc = timestamp(time);
+    const places = [];
+    for (const text of stops) {
+      const resolved = await this.resolve(text);
+      places.push({query: text, place: resolved.place, name: resolved.selected.name, id: resolved.selected.id});
+    }
+    const legs = [];
+    let reply;
+    for (let i = 0; i + 1 < places.length; i++) {
+      reply = await this.get('plan', {fromPlace: places[i].place, toPlace: places[i + 1].place, time: utc, numItineraries: limit}, {view: 'route', limit});
+      if (!Array.isArray(reply.data.itineraries)) throw new Error('Unexpected Transitous journey response');
+      legs.push({from: places[i].name || places[i].query, to: places[i + 1].name || places[i + 1].query, itineraries: reply.data.itineraries});
+    }
+    const empty = legs.filter(l => !l.itineraries.length).map(l => `${l.from} → ${l.to}`);
+    return {stops: places.map(p => pick(p, ['query', 'name', 'id'])), time: utc, legs, note: 'Each leg is planned from the same start time; check that connections between legs line up.', sources: [this.source(reply)], warnings: [...caveats, ...(empty.length ? [`No itineraries for ${empty.join(', ')}; this can indicate a feed gap, not an impossible journey.`] : [])]};
   }
   async departures({stop_id, time, limit = 10}) {
     const reply = await this.get('stoptimes', {stopId: stop_id, time: timestamp(time), n: limit});

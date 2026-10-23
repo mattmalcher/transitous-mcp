@@ -1,4 +1,4 @@
-import { compactPlan } from './research.js';
+import { compactPlan, routePlan } from './research.js';
 const API = 'https://api.transitous.org/api/';
 const endpoints = {geocode: 'v1/geocode', plan: 'v6/plan', stoptimes: 'v6/stoptimes'};
 const allowed = new Set(['geocode', 'plan', 'stoptimes']);
@@ -38,7 +38,9 @@ export class TransitousGateway {
     await work;
   }
   async run(request) {
-    const {path, params} = await request.json();
+    const {path, params, view} = await request.json();
+    // view 'route' reshapes a plan reply after caching, so the cache always holds the full compacted plan.
+    const shape = reply => view?.view === 'route' && path === 'plan' ? {...reply, data: routePlan(reply.data, Math.min(Math.max(1, view.limit | 0), 6))} : reply;
     if (!allowed.has(path)) return Response.json({error: 'Unsupported upstream endpoint'}, {status: 400});
     const url = new URL(endpoints[path], API);
     for (const [key, value] of Object.entries(params).sort(([a], [b]) => a.localeCompare(b))) {
@@ -47,7 +49,7 @@ export class TransitousGateway {
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url.href));
     const key = `cache:${Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('')}`;
     const cached = await this.storage.get(key);
-    if (cached && cached.expires > this.now()) return Response.json({...cached.reply, cached: true});
+    if (cached && cached.expires > this.now()) return Response.json(shape({...cached.reply, cached: true}));
     // Singleton queue coordinates all Worker isolates and persists its last request time.
     const last = await this.storage.get('last') || 0;
     await this.sleep(Math.max(0, 1000 - (this.now() - last)));
@@ -77,13 +79,13 @@ export class TransitousGateway {
     const alarm = await this.storage.getAlarm();
     if (!alarm || alarm > expires) await this.storage.setAlarm(expires);
     await this.storage.put('keys', keys);
-    return Response.json(reply);
+    return Response.json(shape(reply));
   }
 }
 export function gatewayGet(binding) {
   const stub = binding.get(binding.idFromName('shared-upstream'));
-  return async (path, params) => {
-    const response = await stub.fetch('https://transitous.internal/query', {method: 'POST', body: JSON.stringify({path, params})});
+  return async (path, params, view) => {
+    const response = await stub.fetch('https://transitous.internal/query', {method: 'POST', body: JSON.stringify({path, params, view})});
     const reply = await response.json();
     if (!response.ok) throw new Error(reply.error || 'Transitous request failed');
     return reply;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Research, timestamp, coordinates} from '../src/research.js';
+import {Research, timestamp, coordinates, routePlan} from '../src/research.js';
 const reply = data => ({data, retrieved_at: '2026-10-01T10:00:00Z', cached: false});
 test('requires explicit offset, converts correctly and rejects invalid coordinates', () => {
   assert.equal(timestamp('2026-10-10T08:00+02:00'), '2026-10-10T06:00:00.000Z');
@@ -42,4 +42,30 @@ test('boards pass exact stop ID and return bounded rows with platform data', asy
   });
   const result = await research.departures({stop_id: 'fictional:stop', time: '2026-10-10T08:00Z', limit: 1});
   assert.equal(result.departures.length, 1); assert.equal(result.departures[0].place.track, '4');
+});
+test('route resolves each stop once, plans consecutive legs with the route view, and states caveats once', async () => {
+  const calls = [];
+  const research = new Research(async (path, params, view) => {
+    calls.push({path, params, view});
+    if (path === 'geocode') return reply([{id: `id-${params.text}`, type: 'STOP', name: `Fictional ${params.text}`, lat: 1, lon: 2}]);
+    return reply({itineraries: params.fromPlace === '7,8' ? [] : [{transfers: 0, legs: [{mode: 'RAIL', line: 'TEST 1'}]}]});
+  });
+  const result = await research.route({stops: ['A', 'B', '7,8', 'D'], time: '2026-10-10T08:00+01:00', limit: 2});
+  assert.equal(calls.filter(c => c.path === 'geocode').length, 3);
+  const plans = calls.filter(c => c.path === 'plan');
+  assert.equal(plans.length, 3);
+  assert.deepEqual(plans[0].view, {view: 'route', limit: 2});
+  assert.equal(plans[0].params.numItineraries, 2);
+  assert.equal(result.legs[1].to, '7,8');
+  assert.deepEqual(result.stops[0], {query: 'A', name: 'Fictional A', id: 'id-A'});
+  assert.equal(result.sources.length, 1);
+  assert.match(result.warnings.at(-1), /No itineraries for 7,8 → Fictional D;/);
+  await assert.rejects(research.route({stops: ['A', 'B'], time: '2026-10-10T08:00'}), /explicit UTC offset/);
+});
+test('route view keeps a few itineraries and one line per leg', () => {
+  const leg = {mode: 'RAIL', startTime: 's', endTime: 'e', displayName: 'TGV 1', agencyName: 'Fictional Rail', headsign: 'Somewhere', from: {name: 'A', departure: 'd', scheduledTrack: '4', lat: 1}, to: {name: 'B', arrival: 'a', alerts: [{}]}};
+  const data = {itineraries: [1, 2, 3, 4].map(n => ({duration: n, transfers: 0, legs: [leg]}))};
+  const view = routePlan(data, 2);
+  assert.equal(view.itineraries.length, 2);
+  assert.deepEqual(view.itineraries[0].legs[0], {mode: 'RAIL', from: 'A', to: 'B', departure: 'd', arrival: 'a', line: 'TGV 1', agency: 'Fictional Rail', headsign: 'Somewhere', track: '4'});
 });

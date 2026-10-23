@@ -105,3 +105,17 @@ test('still rejects oversized non-plan bodies', async () => {
   assert.equal((await request()).status, 502);
   assert.equal(calls.length, 1);
 });
+
+test('route view reshapes plan replies after caching, so the cache keeps the full plan', async () => {
+  const plan = {itineraries: [1, 2, 3].map(n => ({duration: n, legs: [{mode: 'RAIL', from: {name: 'Fictional A', lat: 1}, to: {name: 'Fictional B'}}]}))};
+  const {gateway, calls} = setup(() => Response.json(plan));
+  const ask = view => gateway.fetch(new Request('https://internal/query', {method: 'POST', body: JSON.stringify({path: 'plan', params: {fromPlace: '1,2', toPlace: '3,4'}, view})})).then(r => r.json());
+  const lean = await ask({view: 'route', limit: 1});
+  assert.equal(lean.data.itineraries.length, 1);
+  assert.equal(lean.data.itineraries[0].legs[0].from, 'Fictional A');
+  const full = await ask(undefined);
+  assert.equal(full.cached, true);
+  assert.equal(full.data.itineraries.length, 3);
+  assert.equal(full.data.itineraries[0].legs[0].from.lat, 1);
+  assert.equal(calls.length, 1);
+});
