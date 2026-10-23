@@ -65,6 +65,8 @@ Measured on an i5-12600K (up to 4.9 GHz), Node 24, 30 runs per scenario, p95 in 
 
 ## Verdict
 
+*Superseded for `plan_route` by the deployed check below.*
+
 **Viable on Free, with the DO trimming change**, for Transitous including
 `plan_route`, and for seat61 with the cheaper parse. The margins are about 2.5–5×
 on this machine. Cloudflare's servers are likely slower per core than this
@@ -81,3 +83,40 @@ Deploy this branch under a **different name** (for example
 own `MCP_TOKEN`, so it fails closed. Turn on observability, run the five-leg
 route a few times, then read CPU time per invocation in Workers Logs, including
 cold starts. Delete the Worker afterwards.
+
+## Deployed check (23 October 2026)
+
+Deployed as `transitous-cpu-spike` (its own Worker, DO and `MCP_TOKEN`; the live
+`transitous-mcp` was untouched), driven by `remote.js`, then deleted. `deploy/`
+holds the entry and config, which add the `plan_route` prototype at `/route`.
+The same traffic ran against the trimmed build and then the untrimmed baseline,
+shifted a day so plans missed the cache. CPU per invocation came from
+`wrangler tail` (which dropped some events) and the Workers analytics API.
+
+| Invocation | Trimmed: p50 / max ms | Baseline: p50 / max ms |
+|---|---|---|
+| Worker, single tools (`/mcp`) | 10 / 21 | 5 / 8 |
+| Worker, `plan_route` 5 legs | 21 / 50 | 18 / 39 |
+| DO per call | 4 / 29 | 5 / 14 |
+
+The trimmed maxima include a cold isolate's first requests (17–21 ms) and the
+1.35 MB Paris → Wien plan (DO 29 ms, Worker 19 ms), which the baseline rejects as
+too large. Every invocation in both runs ended `ok`; none was `exceededCpu`.
+
+Findings:
+
+1. **Production costs about 5× the local estimate** for every tool, so the local
+   margins above don't hold.
+2. **Single tools fit Free like `travel-plugin` does.** That Worker's 3,751
+   requests on this account had p99 13.7 ms, max 24 ms, and no `exceededCpu`.
+   Cloudflare tolerates infrequent overruns and terminates consistent ones.
+3. **`plan_route` as prototyped doesn't fit.** It is 18–50 ms on almost every
+   call, with or without trimming. The Worker's cost is parsing about 150 KB of DO
+   replies and serialising a 120–140 KB result twice (text and
+   `structuredContent`). Phase 5 has to cut that output hard, or leave chaining to
+   the client with `plan_journey` per leg.
+4. **Trimming is still worth keeping.** It fixes the long-query rejection (the
+   guard now applies after trimming) and makes cached plans small, but its
+   production CPU gain is within noise.
+5. **The account is on Workers Free.** A deploy with `limits.cpu_ms` was refused
+   with "CPU limits are not supported for the Free plan" (code 100328).
