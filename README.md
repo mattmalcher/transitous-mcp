@@ -4,6 +4,20 @@ Standalone, read-only journey research MCP, ready to host on a Cloudflare Worker
 Standard Streamable HTTP at `/mcp`; a bundled stdio bridge supports desktop
 clients. No Site, plugin wrapper, planner checkout or Python runtime is needed.
 
+The research modules can be reused under the MIT licence.
+
+`register.js` is the SDK tool/resource registration shared with the standalone
+server. `protocol.js` is the SDK-free stateless research transport, promoted
+from the CPU experiment, including departure
+boards, bounded request reads and guarded tool dispatch. Its host must perform
+authentication and authorization first. The standalone Worker's existing SDK
+and auth paths remain in place. Embedding hosts supply their own authentication.
+
+The default User-Agent points at this repository:
+`transitous-mcp/0.1.0 (+https://github.com/mattmalcher/transitous-mcp)`.
+Before making the repository public, review its fixtures and history; the
+User-Agent URL alone does not make a private repository accessible.
+
 ## Tools
 
 - `find_stations`: up to eight stop/place matches, IDs, coordinates and timezones.
