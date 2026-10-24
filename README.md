@@ -1,28 +1,16 @@
 # Transitous MCP
 
-Standalone, read-only journey research MCP, ready to host on a Cloudflare Worker.
-Standard Streamable HTTP at `/mcp`; a bundled stdio bridge supports desktop
-clients. No Site, plugin wrapper, planner checkout or Python runtime is needed.
+A basic MCP shim for [Transitous](https://transitous.org/), exposing station
+search, journey planning and departure boards to AI assistants.
 
-The research implementation is also reusable under the MIT licence:
-`src/research.js` provides query logic, `src/gateway.js` provides the shared
-cache/rate-limit Durable Object, `src/register.js` registers SDK tools/resources,
-and `src/protocol.js` provides a stateless SDK-free research transport. Consumers
-can vendor these modules with the licence, recording the source commit and file
-hashes for reproducibility. Maintain fixes here and run `npm run check` before
-pushing them to `main`.
+The goal is to make it easier for more people to use public transport when travelling.
+This is an independent project, not affiliated with or endorsed by Transitous.
 
-`register.js` is the SDK tool/resource registration shared with the standalone
-server. `protocol.js` is the SDK-free stateless research transport, promoted
-from the CPU experiment, including departure
-boards, bounded request reads and guarded tool dispatch. Its host must perform
-authentication and authorization first. The standalone Worker's existing SDK
-and auth paths remain in place. Embedding hosts supply their own authentication
-and pass only research queries and the upstream binding to these modules.
-
-The default User-Agent points at this repository:
-`transitous-mcp/0.1.0 (+https://github.com/mattmalcher/transitous-mcp)`.
-This identifies the implementation to upstream operators.
+**Transitous:** [Website](https://transitous.org/) ·
+[Terms and usage policy](https://transitous.org/api/#usage-policy) ·
+[Matrix chat](https://matrix.to/#/%23transitous:matrix.spline.de) ·
+[GitHub](https://github.com/public-transport/transitous) ·
+[Data sources and attribution](https://transitous.org/sources/)
 
 ## Tools
 
@@ -182,7 +170,29 @@ See [Transitous API policy](https://transitous.org/api/).
 Attribution: [Transitous sources](https://transitous.org/sources/) and
 [© OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 
-## Architecture and later wrapper
+## Reuse the research modules
+
+The research implementation is also reusable under the MIT licence:
+`src/research.js` provides query logic, `src/gateway.js` provides the shared
+cache/rate-limit Durable Object, `src/register.js` registers SDK tools/resources,
+and `src/protocol.js` provides a stateless SDK-free research transport. Consumers
+can vendor these modules with the licence, recording the source commit and file
+hashes for reproducibility. Maintain fixes here and run `npm run check` before
+pushing them to `main`.
+
+`register.js` is the SDK tool/resource registration shared with the standalone
+server. `protocol.js` is the SDK-free stateless research transport, promoted
+from the CPU experiment, including departure
+boards, bounded request reads and guarded tool dispatch. Its host must perform
+authentication and authorization first. The standalone Worker's existing SDK
+and auth paths remain in place. Embedding hosts supply their own authentication
+and pass only research queries and the upstream binding to these modules.
+
+The default User-Agent points at this repository:
+`transitous-mcp/0.1.0 (+https://github.com/mattmalcher/transitous-mcp)`.
+This identifies the implementation to upstream operators.
+
+## Architecture
 
 `research.js` contains the portable research operations; `mcp.js` describes the
 MCP tools; `worker.js` handles authentication/transport; `gateway.js` coordinates
@@ -192,7 +202,8 @@ runtime code generation. API endpoints follow the published MOTIS 2.10.2 schema:
 `v1/geocode`, `v6/plan`, `v6/stoptimes`. Version 6 has correct zero-transfer
 semantics.
 
-Embedding applications can proxy the tools with their own authentication.
+Embedding applications can proxy these tools with their own user-facing
+research guidance. Authentication is kept at the transport boundary.
 
 References: [Cloudflare remote MCP guide](https://developers.cloudflare.com/agents/model-context-protocol/guides/remote-mcp-server/),
 [MOTIS API schema](https://github.com/motis-project/motis/blob/v2.10.2/openapi.yaml).
