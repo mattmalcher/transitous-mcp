@@ -6,10 +6,6 @@ search, journey planning and departure boards to AI assistants.
 The goal is to make it easier for more people to use public transport when travelling.
 This is an independent project, not affiliated with or endorsed by Transitous.
 
-Designed to fit within Cloudflare Workers Free limits. The intended setup is
-for each person to deploy their own instance in their own Cloudflare account;
-this project does not provide a shared hosted endpoint.
-
 **Transitous:** [Website](https://transitous.org/) ·
 [Terms and usage policy](https://transitous.org/api/#usage-policy) ·
 [Matrix chat](https://matrix.to/#/%23transitous:matrix.spline.de) ·
@@ -39,6 +35,55 @@ No results does not prove no service exists. `transitous://guide` and MCP server
 instructions explain these research rules. This MVP does not perform operator
 verification or modify itineraries.
 
+## Hosting
+
+Run locally with Wrangler (see [Develop and verify](#develop-and-verify)), or
+deploy your own instance in your own Cloudflare account. Designed to fit within
+Cloudflare Workers Free limits; this project does not provide a shared hosted
+endpoint. See [PERFORMANCE.md](PERFORMANCE.md) for measurements and design choices.
+
+## Before deploying
+
+To follow [Transitous's usage policy](https://transitous.org/api/#usage-policy):
+
+- Publish the code you deploy, including any changes, and keep the MIT licence
+  notice. Light prototype testing before publication is fine.
+- Keep your use of the Transitous API non-commercial.
+- Contact Transitous in its [Matrix channel](https://matrix.to/#/%23transitous:matrix.spline.de)
+  before routing or other potentially resource-intensive use. The limits below
+  do not replace this requirement.
+- Set `TRANSITOUS_USER_AGENT` with the application name, version and your own
+  contact URL or email.
+- Ensure your client visibly links to [Transitous sources](https://transitous.org/sources/)
+  and credits [© OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
+  Follow any additional conditions from the data sources.
+
+## Upstream load and caching
+
+Transitous is an open, volunteer-run project providing shared public transport
+infrastructure. We aim to respect its resources by keeping requests modest,
+reusing cached results and avoiding bulk queries or automatic retries.
+
+One SQLite Durable Object enforces these limits across all clients:
+
+| Limit | Value |
+|---|---|
+| Upstream request spacing | At least 1 second |
+| Upstream attempts | 30/minute; 200/UTC day |
+| Active queue | 8 requests |
+| Journey/station lookup cache | 24 hours |
+| Departure board cache | 60 seconds |
+| Cache storage | 64 responses, up to 1 MB each |
+
+Failed attempts count; cache hits do not. At the daily limit, only cached
+queries work until midnight UTC. Cached results retain their retrieval time
+and report `cached: true`. Check boards or operators for current conditions.
+Expired entries are removed by alarms.
+
+Tool schemas bound query sizes and do not expose arbitrary upstream URLs.
+Authenticated clients can still exhaust the shared budget or generate Worker
+traffic; these controls cap upstream load, not Cloudflare costs or denial of service.
+
 ## Develop and verify
 
 Node 20+ and a Cloudflare account with Workers/Durable Objects support.
@@ -48,21 +93,28 @@ npm ci
 npm run check
 ```
 
-`check` runs offline fictional-fixture tests (including an SDK HTTP client and
-a desktop stdio bridge round trip) and a Wrangler dry-run bundle. Tests never
-call Transitous. The bridge test binds an ephemeral loopback port.
+`check` runs offline fixture tests, HTTP/stdio integration tests and a Wrangler
+dry-run bundle. It never calls Transitous; the bridge test uses a loopback port.
 
-For local work, create an ignored `.dev.vars` containing a random development
-`MCP_TOKEN`, then run `npm run dev`. The endpoint is printed by Wrangler.
-Never commit `.dev.vars`, client credentials, real journey outputs or caches.
+For local development, put a random `MCP_TOKEN` in an ignored `.dev.vars`, then
+run `npm run dev`. Wrangler prints the endpoint. Keep credentials, real journey
+outputs and caches out of version control.
 
-With `TRANSITOUS_MCP_URL` and `TRANSITOUS_MCP_TOKEN` set, `npm run smoke`
-checks MCP initialization, discovery, guide access and validation without any
-upstream call. `npm run smoke -- --live-lookup` additionally makes one station
-lookup and checks its cached repeat. The actual local workerd runtime passed
-both checks during implementation. Live routing/departure results and deployment
-in a Cloudflare account remain to be smoke-tested; offline fixtures cover those
-operations without imposing routing load on Transitous.
+Set `TRANSITOUS_MCP_URL` and `TRANSITOUS_MCP_TOKEN`, then run:
+
+- `npm run smoke`: checks initialization, discovery, guide access and validation
+  without upstream calls.
+- `npm run smoke -- --live-lookup`: also checks one station lookup and its cache.
+
+Both passed locally under workerd. Deployed routing and departure boards still
+need a live smoke test.
+
+## Data and privacy
+
+The shared cache can contain searched names and coordinates; host it in your
+own Cloudflare account.
+Worker observability is off by default, and errors omit raw upstream bodies.
+Cloudflare may retain platform metadata.
 
 ## Deploy
 
@@ -84,19 +136,20 @@ require authentication, and each door is closed unless its secret is set.
    Use different random values for the two tokens.
 4. Run `npm run deploy`. Use the printed `https://…workers.dev/mcp` endpoint.
 
-Missing or incorrect tokens get 401. With neither `MCP_TOKEN` nor `SITE_TOKEN`
-set (or blank), or with both set to the same value, `/mcp` returns 503 without
-handling MCP requests or contacting upstream. Equal values are refused because
-the direct door would otherwise bypass the Site allowlist. A Site token with an
-empty or missing allowlist still answers discovery but refuses every other call
-(403). The public `/` metadata endpoint remains available. Rotate a token with
-the secret command; deleting it closes that door. To find a ChatGPT user ID for
-`ALLOWED_USER_IDS`, call from the Site once and read the refusal in
-`npx wrangler tail` (an ID is not a secret). There are no accounts or OAuth
-login on the Worker; a Site provides the ChatGPT-facing login.
-The endpoint is designed for direct MCP clients, a desktop bridge and a Site
-bridge; native Claude web/mobile connector installation remains unverified.
-No CORS/browser origins are enabled. No legacy SSE endpoint is provided.
+Authentication failures:
+
+- Missing or incorrect token: 401.
+- Neither token configured, or both tokens identical: 503; no upstream calls.
+- Site user absent from `ALLOWED_USER_IDS`: 403, except for discovery.
+
+Use distinct tokens to prevent direct access bypassing the Site allowlist.
+Rotate or delete a secret with Wrangler to change or close access. To find a
+Site user's ID, make a refused call and inspect `npx wrangler tail`.
+
+The public `/` endpoint serves metadata. The Worker has no accounts or OAuth;
+the Site handles ChatGPT login. Direct HTTP, desktop and Site bridges are
+supported; native Claude web/mobile installation is unverified. There is no
+browser CORS access or legacy SSE endpoint.
 
 ## Connect a desktop client (including Claude Desktop)
 
@@ -118,12 +171,10 @@ absolute paths on that machine. For example:
 }
 ```
 
-Set `TRANSITOUS_MCP_TOKEN` to the Worker secret in the client environment
-and keep that configuration private. The bridge forwards tools and resources
-to the Worker; it never routes against Transitous independently. HTTPS is
-required except for loopback development. stdout contains MCP messages only.
-The protocol bridge is tested; installation in the actual desktop applications
-remains a manual smoke check after deployment.
+Use the Worker's `MCP_TOKEN` and keep the client configuration private. The
+bridge forwards tools and resources over HTTPS (HTTP is allowed for loopback
+development). stdout is reserved for MCP messages. Bridge tests pass;
+installation in desktop applications still needs a manual check.
 
 ## Connect Claude Code / other HTTP clients
 
@@ -142,75 +193,34 @@ between these coordinates, departing after this timestamp” or “Find the last
 connection that arrives before this timestamp”. Supply real places only in your
 private client session, not fixtures or committed logs.
 
-## Upstream load, caching and data
-
-A singleton SQLite Durable Object serializes upstream requests across all
-Worker isolates, spaces starts at least one second apart, caps upstream misses
-at thirty per minute and 200 per UTC calendar day, and limits its active queue
-to eight requests. These limits are shared by everyone, including authenticated
-clients. Failed upstream attempts count; cache hits do not. Exhausting the daily
-budget blocks fresh lookups until midnight UTC while cached queries still work. Responses
-are cached for 24 hours (journeys/lookups) or 60 seconds (departure boards).
-Cached results preserve their original retrieval time and explicitly report
-`cached: true`. Journey responses can therefore be stale for a day; check a
-short-lived board or the operator for current conditions.
-
-At most 64 raw upstream responses are stored; each is capped at 1 MB before
-storage. Alarms remove expired entries. The cache is shared across all callers and may contain searched names/coordinates, so it belongs in
-your own Cloudflare account. It stores no itinerary documents or credentials.
-Worker observability is disabled by default; tool errors do not include raw
-upstream bodies. Cloudflare infrastructure may retain platform metadata.
-
-Transitous requires open-source, non-commercial use, request identification,
-source attribution and modest load. Light prototype testing is allowed before
-publication. This source carries the MIT licence; publish it before
-regular use, and follow its requirement to contact the operators before routing
-or substantial load. Tool schemas bound query sizes and do not expose arbitrary upstream URLs or bulk
-operations. Authenticated clients can still automate allowed calls, exhaust the
-shared budget or generate Worker traffic; these controls cap upstream load, not
-Cloudflare costs or denial of service. There is no automatic retry loop here.
-See [Transitous API policy](https://transitous.org/api/).
-
-Attribution: [Transitous sources](https://transitous.org/sources/) and
-[© OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
-
 ## Reuse the research modules
 
-The research implementation is also reusable under the MIT licence:
-`src/research.js` provides query logic, `src/gateway.js` provides the shared
-cache/rate-limit Durable Object, `src/register.js` registers SDK tools/resources,
-and `src/protocol.js` provides a stateless SDK-free research transport. Consumers
-can vendor these modules with the licence, recording the source commit and file
-hashes for reproducibility. Maintain fixes here and run `npm run check` before
-pushing them to `main`.
+The MIT-licensed modules can be embedded in other hosts:
 
-`register.js` is the SDK tool/resource registration shared with the standalone
-server. `protocol.js` is the SDK-free stateless research transport, promoted
-from the CPU experiment, including departure
-boards, bounded request reads and guarded tool dispatch. Its host must perform
-authentication and authorization first. The standalone Worker's existing SDK
-and auth paths remain in place. Embedding hosts supply their own authentication
-and pass only research queries and the upstream binding to these modules.
+| Module | Role |
+|---|---|
+| `src/research.js` | Research queries |
+| `src/gateway.js` | Shared cache and upstream rate limits |
+| `src/register.js` | MCP SDK tool/resource registration |
+| `src/protocol.js` | Stateless, SDK-free transport with bounded reads and guarded dispatch |
 
-The default User-Agent points at this repository:
+Embedding hosts must authenticate and authorize requests before passing research
+queries and the upstream binding to these modules. When vendoring, include the
+licence and record the source commit and file hashes. Maintain fixes here and
+run `npm run check` before pushing.
+
+The default upstream User-Agent identifies this repository:
 `transitous-mcp/0.1.0 (+https://github.com/mattmalcher/transitous-mcp)`.
-This identifies the implementation to upstream operators.
-
-Historical CPU measurements and the resulting design choices are summarized in
-[PERFORMANCE.md](PERFORMANCE.md).
+See [PERFORMANCE.md](PERFORMANCE.md) for CPU measurements and design choices.
 
 ## Architecture
 
-`research.js` contains the portable research operations; `mcp.js` describes the
-MCP tools; `worker.js` handles authentication/transport; `gateway.js` coordinates
-upstream caching/load; `stdio.js` connects a desktop stdio host to remote HTTP.
-The installed MCP SDK uses a Workers-compatible schema validator rather than
-runtime code generation. API endpoints follow the published MOTIS 2.10.2 schema:
-`v1/geocode`, `v6/plan`, `v6/stoptimes`. Version 6 has correct zero-transfer
-semantics.
+`mcp.js` defines the tools, `worker.js` handles authentication and HTTP transport,
+and `stdio.js` bridges desktop clients to the Worker. The MCP SDK uses a
+Workers-compatible schema validator without runtime code generation.
 
-Embedding applications can proxy these tools with their own user-facing
-research guidance. Authentication is kept at the transport boundary.
+Upstream calls follow MOTIS 2.10.2: `v1/geocode`, `v6/plan` and `v6/stoptimes`.
+Version 6 supports correct zero-transfer semantics.
 
 References: [Cloudflare remote MCP guide](https://developers.cloudflare.com/agents/model-context-protocol/guides/remote-mcp-server/),
 [MOTIS API schema](https://github.com/motis-project/motis/blob/v2.10.2/openapi.yaml).
