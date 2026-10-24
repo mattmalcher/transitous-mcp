@@ -196,6 +196,9 @@ The default User-Agent points at this repository:
 `transitous-mcp/0.1.0 (+https://github.com/mattmalcher/transitous-mcp)`.
 This identifies the implementation to upstream operators.
 
+Historical CPU measurements and the resulting design choices are summarized in
+[PERFORMANCE.md](PERFORMANCE.md).
+
 ## Architecture
 
 `research.js` contains the portable research operations; `mcp.js` describes the
