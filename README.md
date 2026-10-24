@@ -3,7 +3,9 @@
 A basic MCP shim for [Transitous](https://transitous.org/), exposing station
 search, journey planning and departure boards to AI assistants.
 
-The goal is to make it easier for more people to use public transport when travelling.
+The goal is to make it easier for more people to use public transport when travelling,
+with a focus on on-the-go use through mobile AI clients. A hosted endpoint keeps
+the service available without running a local server on your device.
 This is an independent project, not affiliated with or endorsed by Transitous.
 
 **Transitous:** [Website](https://transitous.org/) ·
@@ -37,6 +39,25 @@ Run locally with Wrangler (see [Develop and verify](#develop-and-verify)), or
 deploy your own instance in your own Cloudflare account. Designed to fit within
 Cloudflare Workers Free limits; this project does not provide a shared hosted
 endpoint. See [PERFORMANCE.md](PERFORMANCE.md) for measurements and design choices.
+
+## Related projects
+
+- [Movm/transitous-mcp](https://github.com/Movm/transitous-mcp): broader MOTIS API
+  coverage through an action catalog, with Node/Docker hosting and local stdio use.
+- [mcp-server-public-transport](https://github.com/mirodn/mcp-server-public-transport):
+  European transport tools combining national APIs with Transitous for Lisbon/Porto.
+- [KudaGo Nominatim MCP](https://github.com/RawsTourix/kudago-nominatim-mcp-server/blob/main/README.en.md):
+  events, places and geocoding alongside Transitous journey planning.
+- [GeoAgentic.app](https://github.com/roverbird/geoagentic.app): geographic and
+  Slovenian services, including a Transitous-backed European transit router.
+- [MOTIS MCP support](https://github.com/motis-project/motis/pull/1532): built into
+  the upstream routing engine and exposed at `https://api.transitous.org/api/mcp`.
+  Verified on 2026-10-24 with MCP initialization and tool discovery: MOTIS v2.11.4
+  exposes one `plan` tool for journeys, with arrival deadlines and pagination.
+
+This project focuses on station search, journey planning and departure boards
+for on-the-go use through mobile AI clients. See [Connect clients](#connect-clients)
+for setup and current compatibility limitations.
 
 ## Before deploying
 
