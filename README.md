@@ -6,6 +6,10 @@ search, journey planning and departure boards to AI assistants.
 The goal is to make it easier for more people to use public transport when travelling.
 This is an independent project, not affiliated with or endorsed by Transitous.
 
+Designed to fit within Cloudflare Workers Free limits. The intended setup is
+for each person to deploy their own instance in their own Cloudflare account;
+this project does not provide a shared hosted endpoint.
+
 **Transitous:** [Website](https://transitous.org/) ·
 [Terms and usage policy](https://transitous.org/api/#usage-policy) ·
 [Matrix chat](https://matrix.to/#/%23transitous:matrix.spline.de) ·
